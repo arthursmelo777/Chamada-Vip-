@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#3b4642" />
+  <title>Chamada de vídeo</title>
+  <style>
+:root{
+  --green:#25d366;         /* verde oficial do WhatsApp */
+  --green-dark:#1faa52;
+  --red:#f0453a;
+  --bg-top:#5a6a64;
+  --bg-mid:#4a5852;
+  --bg-bottom:#3b4642;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+
+html,body{ height:100%; }
+
+body{
+  font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:#0d0f0e;
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+}
+
+.phone{
+  position:relative;
+  width:100%;
+  max-width:420px;
+  height:100vh;
+  overflow:hidden;
+  background:linear-gradient(180deg,var(--bg-top) 0%,var(--bg-mid) 45%,var(--bg-bottom) 100%);
+  user-select:none;
+}
+
+/* moldura de celular no desktop */
+@media (min-width:480px){
+  body{ background:radial-gradient(circle at 50% 0%,#1d201f,#0a0b0b); }
+  .phone{
+    height:860px;
+    max-height:94vh;
+    border-radius:40px;
+    border:11px solid #0a0a0a;
+    box-shadow:0 30px 90px rgba(0,0,0,.65), inset 0 0 0 2px rgba(255,255,255,.04);
+  }
+}
+
+/* Vídeo do contato (tela cheia) */
+.remote-video{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  background:#111;
+  z-index:1;
+  display:none;
+}
+.phone[data-state="in-call"].has-remote .remote-video{ display:block; }
+
+.video-scrim{
+  position:absolute;
+  inset:0;
+  z-index:2;
+  pointer-events:none;
+  display:none;
+  background:linear-gradient(180deg,
+    rgba(0,0,0,.5) 0%,
+    rgba(0,0,0,0) 20%,
+    rgba(0,0,0,0) 60%,
+    rgba(0,0,0,.6) 100%);
+}
+.phone[data-state="in-call"].has-remote .video-scrim{ display:block; }
+
+/* Barra de status */
+.statusbar{
+  position:relative;
+  z-index:6;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:16px 24px 0;
+  font-size:14px;
+  font-weight:600;
+  letter-spacing:.3px;
+}
+.sysicons{ display:flex; align-items:center; gap:7px; }
+.sysicons svg{ width:17px; height:17px; fill:#fff; opacity:.95; }
+
+/* Botão silenciar */
+.sound-toggle{
+  position:absolute;
+  top:54px;
+  right:20px;
+  width:42px;
+  height:42px;
+  border-radius:50%;
+  border:none;
+  cursor:pointer;
+  background:rgba(255,255,255,.14);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:background .2s, transform .12s;
+  z-index:7;
+}
+.sound-toggle:hover{ background:rgba(255,255,255,.22); }
+.sound-toggle:active{ transform:scale(.92); }
+.sound-toggle svg{ width:20px; height:20px; fill:currentColor; }
+.sound-toggle .ic-off{ display:none; }
+.sound-toggle.muted{ background:rgba(255,255,255,.28); }
+.sound-toggle.muted .ic-on{ display:none; }
+.sound-toggle.muted .ic-off{ display:block; }
+.phone:not([data-state="incoming"]) .sound-toggle{ display:none; }
+
+/* Virar câmera */
+.flip-cam{
+  position:absolute;
+  top:52px;
+  left:20px;
+  width:42px;
+  height:42px;
+  border-radius:50%;
+  border:none;
+  cursor:pointer;
+  background:rgba(0,0,0,.32);
+  color:#fff;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  transition:background .2s, transform .12s;
+  z-index:9;
+}
+.flip-cam:hover{ background:rgba(0,0,0,.5); }
+.flip-cam:active{ transform:scale(.92); }
+.flip-cam svg{ width:22px; height:22px; fill:currentColor; }
+.flip-cam.spin svg{ animation:flipspin .5s ease; }
+.phone[data-state="connecting"] .flip-cam,
+.phone[data-state="in-call"] .flip-cam{ display:flex; }
+
+@keyframes flipspin{
+  from{ transform:rotate(0); }
+  to{ transform:rotate(360deg); }
+}
+
+/* Câmera do usuário (self view) */
+.self-cam{
+  position:absolute;
+  top:64px;
+  right:16px;
+  width:104px;
+  height:150px;
+  border-radius:16px;
+  overflow:hidden;
+  background:#000;
+  box-shadow:0 6px 22px rgba(0,0,0,.45);
+  border:1.5px solid rgba(255,255,255,.18);
+  z-index:8;
+  display:none;
+}
+.phone[data-state="connecting"] .self-cam,
+.phone[data-state="in-call"] .self-cam{ display:block; }
+
+.self-video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  transform:scaleX(-1);
+  display:block;
+  background:#000;
+}
+.self-placeholder{
+  display:none;
+  position:absolute;
+  inset:0;
+  align-items:center;
+  justify-content:center;
+  background:#2b332f;
+}
+.self-placeholder svg{ width:36px; height:36px; fill:rgba(255,255,255,.5); }
+.self-cam.no-video .self-video,
+.self-cam.off .self-video{ display:none; }
+.self-cam.no-video .self-placeholder,
+.self-cam.off .self-placeholder{ display:flex; }
+
+/* Conteúdo */
+.content{
+  position:relative;
+  z-index:5;
+  text-align:center;
+  padding:60px 24px 0;
+}
+.call-type{
+  font-size:15px;
+  color:rgba(255,255,255,.78);
+  letter-spacing:.4px;
+  margin-bottom:26px;
+}
+
+.avatar-wrap{
+  position:relative;
+  width:150px;
+  height:150px;
+  margin:0 auto 26px;
+}
+.avatar{
+  position:absolute;
+  inset:0;
+  border-radius:50%;
+  border:1.5px solid rgba(255,255,255,.4);
+  background:rgba(255,255,255,.06);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+}
+.avatar-img{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  border-radius:50%;
+}
+.avatar-fallback{ width:64px; height:64px; fill:rgba(255,255,255,.55); display:none; }
+.avatar.no-photo .avatar-img{ display:none; }
+.avatar.no-photo .avatar-fallback{ display:block; }
+
+.pulse{
+  position:absolute;
+  inset:0;
+  border-radius:50%;
+  border:2px solid rgba(255,255,255,.4);
+  opacity:0;
+}
+.phone[data-state="incoming"] .pulse{ animation:pulse 2.4s ease-out infinite; }
+.phone[data-state="incoming"] .pulse.delay{ animation-delay:1.2s; }
+
+@keyframes pulse{
+  0%{ transform:scale(1); opacity:.6; }
+  100%{ transform:scale(1.9); opacity:0; }
+}
+
+.name{
+  font-size:28px;
+  font-weight:700;
+  margin-bottom:8px;
+  letter-spacing:.2px;
+}
+.substatus{
+  font-size:15px;
+  color:rgba(255,255,255,.78);
+}
+.timer{
+  display:none;
+  font-size:16px;
+  color:rgba(255,255,255,.85);
+  font-variant-numeric:tabular-nums;
+}
+.phone[data-state="in-call"] .substatus{ display:none; }
+.phone[data-state="in-call"] .timer{ display:block; }
+
+/* Chamada em andamento COM vídeo do contato: esconde avatar/título */
+.phone[data-state="in-call"].has-remote .call-type,
+.phone[data-state="in-call"].has-remote .avatar-wrap{ display:none; }
+.phone[data-state="in-call"].has-remote .content{
+  padding-top:26px;
+  text-shadow:0 1px 8px rgba(0,0,0,.7);
+}
+
+/* Chamada em andamento SEM vídeo (arquivo ausente / câmera do contato desligada):
+   mantém avatar e nome visíveis, como no WhatsApp */
+.phone[data-state="in-call"]:not(.has-remote) .call-type{ color:rgba(255,255,255,.78); }
+
+/* Controles */
+.controls{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:52px;
+  padding:0 42px;
+  z-index:6;
+}
+.incoming-controls,
+.incall-controls,
+.ended-controls{ display:none; }
+
+.phone[data-state="incoming"] .incoming-controls{ display:flex; justify-content:space-between; }
+.phone[data-state="in-call"] .incall-controls{ display:flex; justify-content:center; gap:34px; }
+.phone[data-state="ended"] .ended-controls{ display:flex; justify-content:center; }
+
+.ctrl{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:11px;
+}
+.ctrl span{
+  font-size:13px;
+  color:rgba(255,255,255,.85);
+}
+
+.fab{
+  width:66px;
+  height:66px;
+  border-radius:50%;
+  border:none;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#fff;
+  transition:transform .13s ease, filter .2s, background .2s;
+  box-shadow:0 6px 18px rgba(0,0,0,.28);
+}
+.fab svg{ width:30px; height:30px; fill:#fff; }
+.fab:active{ transform:scale(.9); }
+
+.decline{ background:var(--red); }
+.decline:hover{ filter:brightness(1.08); }
+
+.accept{ background:var(--green); }
+.accept:hover{ filter:brightness(1.08); }
+.phone[data-state="incoming"] .accept{ animation:jiggle 1.4s ease-in-out infinite; }
+
+@keyframes jiggle{
+  0%,100%{ transform:translateY(0); }
+  50%{ transform:translateY(-7px); }
+}
+
+/* Em chamada */
+.fab.small{
+  width:58px;
+  height:58px;
+  background:rgba(255,255,255,.18);
+  box-shadow:none;
+}
+.fab.small:hover{ background:rgba(255,255,255,.28); }
+.fab.small.off{ background:#fff; }
+.fab.small.off svg{ fill:#333; }
+
+.fab.end{ background:var(--red); }
+.fab.end svg{ transform:rotate(135deg); }
+
+/* Encerrada */
+.restart{
+  padding:14px 30px;
+  border-radius:30px;
+  border:none;
+  cursor:pointer;
+  font-size:15px;
+  font-weight:600;
+  color:#fff;
+  background:var(--green);
+  transition:filter .2s, transform .12s;
+  box-shadow:0 6px 18px rgba(0,0,0,.28);
+}
+.restart:hover{ filter:brightness(1.08); }
+.restart:active{ transform:scale(.96); }
+  </style>
+</head>
+<body>
+  <div class="phone" data-state="incoming">
+
+    <!-- Vídeo do "contato" (hospedado no Cloudflare R2) -->
+    <video class="remote-video" id="remoteVideo" src="https://pub-4a4f018fb8914706a4538d36743adb06.r2.dev/video-raquel.mp4" preload="auto" playsinline webkit-playsinline loop muted></video>
+
+    <!-- Overlay de gradiente para leitura sobre o vídeo -->
+    <div class="video-scrim"></div>
+
+
+    <!-- Botão de silenciar toque -->
+    <button class="sound-toggle" id="soundToggle" title="Silenciar toque" aria-label="Silenciar toque">
+      <svg class="ic-on" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.06a7 7 0 0 1 0 13.48v2.06A9 9 0 0 0 14 3.2z"/></svg>
+      <svg class="ic-off" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M15.5 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+
+    <!-- Virar câmera (frontal / traseira) -->
+    <button class="flip-cam" id="flipBtn" title="Virar câmera" aria-label="Virar câmera">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+    </button>
+
+    <!-- Câmera do próprio usuário (self view) -->
+    <div class="self-cam" id="selfCam">
+      <video class="self-video" id="selfVideo" playsinline webkit-playsinline autoplay muted></video>
+      <div class="self-placeholder">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 10.5V7c0-.6-.4-1-1-1H9.8l8.2 8.2v-3.7l4 4v-11l-4 4zM3.3 2.8 2 4.1l2 2V17c0 .6.4 1 1 1h12c.14 0 .27-.03.4-.08L20.9 21l1.3-1.3L3.3 2.8z"/></svg>
+      </div>
+    </div>
+
+    <!-- Conteúdo central -->
+    <div class="content">
+      <p class="call-type" id="callType">Chamada de vídeo…</p>
+
+      <div class="avatar-wrap">
+        <span class="pulse"></span>
+        <span class="pulse delay"></span>
+        <div class="avatar" id="avatar">
+          <img class="avatar-img" id="avatarImg" src="data:image/jpeg;base64,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" alt="Ray Valle"
+               onerror="this.closest('.avatar').classList.add('no-photo')" />
+          <svg class="avatar-fallback" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12c2.7 0 4.9-2.2 4.9-4.9S14.7 2.2 12 2.2 7.1 4.4 7.1 7.1 9.3 12 12 12zm0 2.4c-3.3 0-9.8 1.6-9.8 4.9v2.5h19.6v-2.5c0-3.3-6.5-4.9-9.8-4.9z"/></svg>
+        </div>
+      </div>
+
+      <h1 class="name" id="name">Ray Valle</h1>
+      <p class="substatus" id="subStatus">chamada de vídeo recebida</p>
+      <p class="timer" id="timer">00:00</p>
+    </div>
+
+    <!-- Controles -->
+    <div class="controls">
+
+      <!-- Chamada recebida -->
+      <div class="incoming-controls">
+        <div class="ctrl">
+          <button class="fab decline" id="declineBtn" aria-label="Recusar">
+            <svg viewBox="0 0 24 24"><path d="M18.3 5.7a1 1 0 0 0-1.4 0L12 10.6 7.1 5.7A1 1 0 1 0 5.7 7.1L10.6 12l-4.9 4.9a1 1 0 1 0 1.4 1.4L12 13.4l4.9 4.9a1 1 0 0 0 1.4-1.4L13.4 12l4.9-4.9a1 1 0 0 0 0-1.4z"/></svg>
+          </button>
+          <span>Recusar</span>
+        </div>
+        <div class="ctrl">
+          <button class="fab accept" id="acceptBtn" aria-label="Aceitar">
+            <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+          </button>
+          <span>Aceitar</span>
+        </div>
+      </div>
+
+      <!-- Em chamada -->
+      <div class="incall-controls">
+        <div class="ctrl">
+          <button class="fab small" id="muteMicBtn" aria-label="Microfone">
+            <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+          </button>
+          <span>Áudio</span>
+        </div>
+        <div class="ctrl">
+          <button class="fab small" id="videoBtn" aria-label="Vídeo">
+            <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+          </button>
+          <span>Vídeo</span>
+        </div>
+        <div class="ctrl">
+          <button class="fab end" id="endBtn" aria-label="Encerrar">
+            <svg viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
+          </button>
+          <span>Encerrar</span>
+        </div>
+      </div>
+
+      <!-- Encerrada -->
+      <div class="ended-controls">
+        <button class="restart" id="restartBtn">Ligar novamente</button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+const phone       = document.querySelector('.phone');
+const callType    = document.getElementById('callType');
+const subStatus   = document.getElementById('subStatus');
+const timerEl     = document.getElementById('timer');
+const acceptBtn   = document.getElementById('acceptBtn');
+const declineBtn  = document.getElementById('declineBtn');
+const endBtn      = document.getElementById('endBtn');
+const restartBtn  = document.getElementById('restartBtn');
+const soundToggle = document.getElementById('soundToggle');
+const muteMicBtn  = document.getElementById('muteMicBtn');
+const videoBtn    = document.getElementById('videoBtn');
+const flipBtn     = document.getElementById('flipBtn');
+
+const remoteVideo = document.getElementById('remoteVideo');
+const selfVideo   = document.getElementById('selfVideo');
+const selfCam     = document.getElementById('selfCam');
+
+let state      = 'incoming';
+let muted      = false;
+let ringing    = false;
+let ringTimer  = null;
+let vibTimer   = null;
+let callTimer  = null;
+let seconds    = 0;
+let audioCtx   = null;
+let flipping   = false;
+
+let facingMode  = 'user';  // câmera PADRÃO: frontal (selfie)
+let localStream = null;    // câmera/microfone do usuário
+
+function setState(s){
+  state = s;
+  phone.dataset.state = s;
+}
+
+/* ---------- Áudio (toque) ---------- */
+function ensureAudio(){
+  if(!audioCtx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(AC) audioCtx = new AC();
+  }
+  if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function beep(freq, start, dur, vol = 0.16){
+  if(!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.value = freq;
+  o.connect(g);
+  g.connect(audioCtx.destination);
+  const t = audioCtx.currentTime + start;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.03);
+  g.gain.setValueAtTime(vol, t + dur - 0.05);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+}
+
+function ringPattern(){
+  ensureAudio();
+  beep(1318, 0.00, 0.18);
+  beep(1046, 0.22, 0.18);
+  beep(1318, 0.50, 0.18);
+  beep(1046, 0.72, 0.20);
+}
+
+function startRinging(){
+  if(ringing || muted) return;
+  ringing = true;
+  ringPattern();
+  ringTimer = setInterval(ringPattern, 2400);
+}
+
+function stopRinging(){
+  ringing = false;
+  if(ringTimer){ clearInterval(ringTimer); ringTimer = null; }
+}
+
+/* ---------- Vibração ---------- */
+function startVibration(){
+  if(!('vibrate' in navigator)) return;
+  try{ navigator.vibrate([500,400,500]); }catch(e){}
+  vibTimer = setInterval(()=>{ try{ navigator.vibrate([500,400,500]); }catch(e){} }, 2400);
+}
+
+function stopVibration(){
+  if(vibTimer){ clearInterval(vibTimer); vibTimer = null; }
+  if('vibrate' in navigator){ try{ navigator.vibrate(0); }catch(e){} }
+}
+
+/* ---------- Cronômetro da chamada ---------- */
+function fmt(n){ return String(n).padStart(2,'0'); }
+
+function startCallTimer(){
+  seconds = 0;
+  timerEl.textContent = '00:00';
+  callTimer = setInterval(()=>{
+    seconds++;
+    timerEl.textContent = fmt(Math.floor(seconds/60)) + ':' + fmt(seconds % 60);
+  }, 1000);
+}
+
+function stopCallTimer(){
+  if(callTimer){ clearInterval(callTimer); callTimer = null; }
+}
+
+/* ---------- Câmera do usuário ---------- */
+function updateMirror(){
+  // espelha apenas quando é a câmera frontal (como um celular de verdade)
+  selfVideo.style.transform = (facingMode === 'user') ? 'scaleX(-1)' : 'none';
+}
+
+function attachStream(){
+  selfVideo.srcObject = localStream;
+  selfCam.classList.remove('no-video');
+  updateMirror();
+  try{ selfVideo.play(); }catch(e){}
+  applyMicState();
+  applyVideoState();
+}
+
+async function startCamera(){
+  if(localStream) return true;
+
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    // Navegador sem suporte, ou página não está em HTTPS (getUserMedia exige
+    // contexto seguro: https:// ou localhost).
+    console.warn('getUserMedia indisponível (navegador sem suporte ou página fora de HTTPS).');
+    selfCam.classList.add('no-video');
+    return false;
+  }
+
+  const attempts = [
+    { video: { facingMode: facingMode }, audio: true },   // ideal: câmera + mic
+    { video: true, audio: true },                          // sem exigir facingMode específico
+    { video: { facingMode: facingMode }, audio: false },   // só vídeo, com facingMode
+    { video: true, audio: false }                          // só vídeo, qualquer câmera
+  ];
+
+  for(const constraints of attempts){
+    try{
+      localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      attachStream();
+      return true;
+    }catch(e){
+      console.warn('Falha ao abrir câmera com', constraints, '->', e.name, e.message);
+    }
+  }
+
+  // Todas as tentativas falharam (permissão negada, câmera em uso por outro
+  // app, ou dispositivo sem câmera).
+  selfCam.classList.add('no-video');
+  return false;
+}
+
+/* Alterna entre câmera frontal e traseira */
+async function flipCamera(){
+  if(flipping || !localStream) return;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+
+  flipping = true;
+  flipBtn.classList.add('spin');
+  const previous = facingMode;
+  facingMode = (facingMode === 'user') ? 'environment' : 'user';
+
+  // para a track de vídeo atual antes de abrir a nova câmera
+  localStream.getVideoTracks().forEach(t => t.stop());
+
+  try{
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { exact: facingMode } },
+      audio: false
+    });
+    const newTrack = newStream.getVideoTracks()[0];
+
+    localStream.getVideoTracks().forEach(t => localStream.removeTrack(t));
+    localStream.addTrack(newTrack);
+
+    selfVideo.srcObject = localStream;
+    updateMirror();
+    try{ await selfVideo.play(); }catch(e){}
+    applyVideoState();
+  }catch(e){
+    // câmera oposta indisponível (ex.: notebook) -> reverte
+    facingMode = previous;
+    try{
+      const back = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingMode },
+        audio: false
+      });
+      const t = back.getVideoTracks()[0];
+      localStream.getVideoTracks().forEach(v => localStream.removeTrack(v));
+      localStream.addTrack(t);
+      selfVideo.srcObject = localStream;
+      updateMirror();
+      try{ await selfVideo.play(); }catch(err){}
+      applyVideoState();
+    }catch(err){
+      selfCam.classList.add('no-video');
+    }
+  }finally{
+    flipping = false;
+    flipBtn.classList.remove('spin');
+  }
+}
+
+function stopCamera(){
+  if(localStream){
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
+  }
+  selfVideo.srcObject = null;
+  selfCam.classList.remove('no-video');
+}
+
+function applyMicState(){
+  const off = muteMicBtn.classList.contains('off');
+  if(localStream) localStream.getAudioTracks().forEach(t => t.enabled = !off);
+}
+
+function applyVideoState(){
+  const off = videoBtn.classList.contains('off');
+  selfCam.classList.toggle('off', off);
+  if(localStream) localStream.getVideoTracks().forEach(t => t.enabled = !off);
+}
+
+/* ---------- Vídeo do contato ---------- */
+remoteVideo.addEventListener('loadeddata', ()=>{
+  phone.classList.add('has-remote');
+});
+remoteVideo.addEventListener('error', ()=>{
+  phone.classList.remove('has-remote');
+});
+
+/* Toca o vídeo do contato COM SOM.
+   Precisa ser chamada de forma SÍNCRONA, direto dentro do clique/toque do
+   usuário (sem setTimeout/await antes dela). Safari iOS e Chrome Android só
+   permitem iniciar áudio se o play() acontecer dentro do próprio gesto —
+   por isso não reiniciamos nem chamamos play() de novo em nenhum outro
+   momento fora do clique de "Aceitar". */
+function playRemoteNow(){
+  try{
+    remoteVideo.muted = false;
+    const p = remoteVideo.play();
+    if(p && typeof p.catch === 'function'){
+      p.catch(()=>{
+        // Se mesmo assim o navegador bloquear o áudio, ao menos toca mudo
+        // (melhor mostrar o vídeo sem som do que não mostrar nada).
+        remoteVideo.muted = true;
+        remoteVideo.play().catch(()=>{});
+      });
+    }
+  }catch(e){}
+}
+
+function stopRemoteVideo(){
+  try{ remoteVideo.pause(); remoteVideo.currentTime = 0; }catch(e){}
+}
+
+/* ---------- Ações ---------- */
+acceptBtn.addEventListener('click', ()=>{
+  stopRinging();
+  stopVibration();
+  ensureAudio();
+
+  setState('connecting');
+  callType.textContent  = 'Chamada de vídeo';
+  subStatus.textContent = 'Conectando…';
+
+  // Ativa a câmera do usuário IMEDIATAMENTE (dentro do gesto de clique)
+  startCamera();
+
+  // Toca o vídeo do contato AGORA, com som, ainda dentro do mesmo clique.
+  // A tela só vai exibi-lo quando o estado mudar para "in-call" (CSS),
+  // mas a reprodução em si já começa aqui para não perder a permissão
+  // de autoplay com áudio no Safari/Chrome mobile.
+  playRemoteNow();
+
+  setTimeout(()=>{
+    setState('in-call');
+    startCallTimer();
+  }, 1200);
+});
+
+declineBtn.addEventListener('click', ()=>{
+  stopRinging();
+  stopVibration();
+  setState('ended');
+  callType.textContent  = 'Chamada de vídeo';
+  subStatus.textContent = 'Chamada recusada';
+});
+
+endBtn.addEventListener('click', ()=>{
+  stopCallTimer();
+  stopCamera();
+  stopRemoteVideo();
+  const dur = timerEl.textContent;
+  setState('ended');
+  subStatus.textContent = 'Chamada encerrada · ' + dur;
+});
+
+restartBtn.addEventListener('click', resetCall);
+
+soundToggle.addEventListener('click', ()=>{
+  muted = !muted;
+  soundToggle.classList.toggle('muted', muted);
+  if(muted) stopRinging();
+  else if(state === 'incoming') startRinging();
+});
+
+muteMicBtn.addEventListener('click', ()=>{
+  muteMicBtn.classList.toggle('off');
+  applyMicState();
+});
+
+videoBtn.addEventListener('click', ()=>{
+  videoBtn.classList.toggle('off');
+  applyVideoState();
+});
+
+flipBtn.addEventListener('click', flipCamera);
+
+function resetCall(){
+  stopCallTimer();
+  stopCamera();
+  stopRemoteVideo();
+  setState('incoming');
+  callType.textContent  = 'Chamada de vídeo…';
+  subStatus.textContent = 'chamada de vídeo recebida';
+  seconds = 0;
+  timerEl.textContent = '00:00';
+  facingMode = 'user';           // volta para a câmera padrão (frontal)
+  updateMirror();
+  muteMicBtn.classList.remove('off');
+  videoBtn.classList.remove('off');
+  selfCam.classList.remove('off');
+  startVibration();
+  if(!muted) startRinging();
+}
+
+/* ---------- Inicialização ---------- */
+updateMirror();
+startVibration();
+if(!muted) startRinging();
+
+// Navegadores bloqueiam áudio até o 1º gesto do usuário
+document.addEventListener('pointerdown', function kick(){
+  ensureAudio();
+  if(!muted && state === 'incoming' && !ringing) startRinging();
+}, { once:true });
+  </script>
+</body>
+</html>
